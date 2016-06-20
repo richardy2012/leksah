@@ -2,7 +2,8 @@
 
 if [ ! -d cache1 ]; then
   cabal update
-  cabal install alex happy haskell-gi --disable-documentation
+  cabal install alex happy --disable-documentation
+  cabal install haskell-gi --disable-documentation
   cabal install gi-cairo gi-gdk gi-gdkpixbuf gi-gio gi-glib gi-gobject gi-gtk gi-gtksource gi-javascriptcore gi-pango gi-webkit gi-atk gi-soup -f-overloaded-methods -f-overloaded-signals -f-overloaded-properties
   mkdir cache1
   mv $APPDATA/ghc $APPDATA/cabal cache1
