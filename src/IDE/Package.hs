@@ -351,7 +351,14 @@ packageDoc' backgroundBuild jumpToWarnings package continuation = do
     catchIDE (do
         let dir = ipdPackageDir package
         useStack <- liftIO . doesFileExist $ dir </> "stack.yaml"
-        runExternalTool' (__ "Documenting") (if useStack then "stack" else "cabal") ("haddock" : ipdHaddockFlags package) dir $ do
+        projectRoot <- liftIO $ findProjectRoot dir
+        runExternalTool' (__ "Documenting") (if useStack then "stack" else "cabal")
+            ((if useStack
+                then ["haddock"]
+                else ["act-as-setup", "--", "haddock",
+                    T.pack ("--builddir=" <> projectRoot </> "dist-newstyle/build" </>
+                        T.unpack (packageIdentifierToString $ ipdPackageId package))])
+            <> ipdHaddockFlags package) dir $ do
             mbLastOutput <- C.getZipSink $ const <$> C.ZipSink sinkLast <*> (C.ZipSink $
                 logOutputForBuild package backgroundBuild jumpToWarnings)
             lift $ postAsyncIDE reloadDoc
