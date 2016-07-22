@@ -581,18 +581,31 @@ packageTest = do
     interruptSaveAndRun $ packageTest' False True package True (\ _ -> return ())
 
 packageTest' :: Bool -> Bool -> IDEPackage -> Bool -> (Bool -> IDEAction) -> IDEAction
-packageTest' backgroundBuild jumpToWarnings package shallConfigure continuation = do
-    let dir = ipdPackageDir package
-    useStack <- liftIO . doesFileExist $ dir </> "stack.yaml"
+packageTest' backgroundBuild jumpToWarnings package shallConfigure continuation =
     if "--enable-tests" `elem` ipdConfigFlags package
         then do
-          logLaunch <- getDefaultLogLaunch
-          showDefaultLogLaunch'
-          catchIDE (do
+            removeTestLogRefs (ipdPackageDir package)
+            pd <- liftIO $ fmap flattenPackageDescription
+                             (readPackageDescription normal (ipdCabalFile package))
+            runTests $ testSuites pd
+        else continuation True
+  where
+    runTests :: [TestSuite] -> IDEAction
+    runTests [] = continuation True
+    runTests (TestSuite {testName = name}:rest) = do
+        let dir = ipdPackageDir package
+        useStack <- liftIO . doesFileExist $ dir </> "stack.yaml"
+        logLaunch <- getDefaultLogLaunch
+        showDefaultLogLaunch'
+        catchIDE (do
             prefs <- readIDE prefs
-            removeTestLogRefs dir
-            let cmd=if useStack then "stack" else "cabal"
-            let args=if useStack then ["test"] else ["test", "--with-ghc=leksahtrue"]
+            projectRoot <- liftIO $ findProjectRoot dir
+            let pkgId = packageIdentifierToString $ ipdPackageId package
+                exePath = projectRoot </> "dist-newstyle/build"
+                            </> T.unpack pkgId
+                            </> "build" </> name </> name
+                cmd  = if useStack then "stack" else exePath
+                args = if useStack then ["test", pkgId <> ":" <> T.pack name] else []
             runExternalTool' (__ "Testing") cmd (args
                 ++ ipdBuildFlags package ++ ipdTestFlags package) dir $ do
                     (mbLastOutput, isConfigErr, _) <- C.getZipSink $ (,,)
@@ -605,11 +618,10 @@ packageTest' backgroundBuild jumpToWarnings package shallConfigure continuation 
                             then
                                 packageConfig' package (\ b ->
                                     when b $ packageTest' backgroundBuild jumpToWarnings package shallConfigure continuation)
-                            else do
-                                continuation (mbLastOutput == Just (ToolExit ExitSuccess))
-                                return ())
+                            else
+                                when (mbLastOutput == Just (ToolExit ExitSuccess)) $
+                                    runTests rest)
             (\(e :: SomeException) -> print e)
-        else continuation True
 
 -- | Run benchmarks as foreground action for current package
 packageBench :: PackageAction
